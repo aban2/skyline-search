@@ -19,7 +19,7 @@ class Bucket:
                 self.master2slave[id].append(point)
             elif domination == -1:
                 self.master2slave[id].append(candidate_point)
-                self.candidate_points[id] = point
+                self.candidate_points[id] = point 
 
         # add new candidate points
         if len(self.holes) == 0:
