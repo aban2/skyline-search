@@ -1,4 +1,5 @@
 import torch
+import copy
 from time import time
 from loader import load_data
 from collections import deque
@@ -26,6 +27,16 @@ class Bucket:
                 self.add_points(slave)
 
     def add_points(self, point):
+        # delete slaves
+        deleted_slaves = []
+        for slave in self.slaves:
+            domination = dominate(slave, point)
+            if domination < 0:
+                deleted_slaves.append(slave)
+        for slave in deleted_slaves:
+            del self.slaves[slave]
+
+        # process candidate
         for candidate_point in self.master2slaves:
             domination = dominate(candidate_point, point)
             if domination == 1:
@@ -33,7 +44,7 @@ class Bucket:
                 self.slaves[point] = 1
                 return
             elif domination == -1:
-                self.delete_candidate_point(candidate_point)
+                del self.master2slaves[candidate_point]
                 self.master2slaves[point] = []
                 return
 
@@ -45,9 +56,6 @@ class Bucket:
             self.delete_candidate_point(old_point)
         elif old_point in self.slaves:
             del self.slaves[old_point]
-        else:
-            return 0
-        return 1
 
 
 class KISkyline:
@@ -60,8 +68,7 @@ class KISkyline:
         self.reverse_topo_graph = {}    # dominate, used to find fathers
 
     def run(self):
-        start_time = time()
-        current_items = 0
+        start_time, total_time = time(), 0
         for ct in range(len(self.data)):
             # record new point, init
             new_point = self.data[ct]
@@ -70,33 +77,29 @@ class KISkyline:
             # if windows full, pop a point
             if self.get_current_items() >= self.args.window_size:
                 while True:
-                    current_items -= 1
                     old_point = self.timeline[0]
                     self.timeline.popleft()
                     old_bitmap = get_bitmap(old_point)
-                    result = self.bucket[old_bitmap].pop_points(old_point)
-                    is_candidate = self.bucket[bitmap].judge(old_point)
-                    if is_candidate:
-                        self.delete_graph_dependencies(old_point)
-                    if result > 0 and self.get_current_items() < self.args.window_size:
+                    self.bucket[old_bitmap].pop_points(old_point)
+                    if self.get_current_items() < self.args.window_size:
                         break
 
-            # get all candidates
-            all_candidates = []
+            # get all candidates, num_slaves
+            all_candidates, num_slaves = [], 0
             for bitmap in self.bucket:
+                num_slaves += len(self.bucket[bitmap].slaves)
                 for candidate_point in self.bucket[bitmap].master2slaves:
                     all_candidates.append(candidate_point)
     
             # do local skyline insertion
-            bitmap = get_bitmap(new_point)
-            if bitmap not in self.bucket:
-                self.bucket[bitmap] = Bucket()
-            is_candidate = self.bucket[bitmap].judge(new_point)
+            new_bitmap = get_bitmap(new_point)
+            if new_bitmap not in self.bucket:
+                self.bucket[new_bitmap] = Bucket()
+            is_candidate = self.bucket[new_bitmap].judge(new_point)
             if is_candidate:
                 # complete graph for the new point
                 for i in range(len(all_candidates)):
                     domination = dominate(all_candidates[i], new_point)
-                    # print(all_candidates[i], new_point, domination)
                     if domination == 1:
                         father, son = all_candidates[i], new_point
                     elif domination == -1:
@@ -119,18 +122,23 @@ class KISkyline:
                     all_candidates.append(new_point)
 
             # add the new point
-            self.bucket[bitmap].add_points(new_point)
+            self.bucket[new_bitmap].add_points(new_point)
             
             # update global skyline points
+            self.update_graph(all_candidates)
             global_skyline_points = {}
             for candidate in all_candidates:
-                if candidate != None:
-                    self.dfs(candidate, {}, global_skyline_points)
+                self.dfs(candidate, {}, global_skyline_points)
             
             if (ct+1) % self.args.print_step == 0:
-                print('step', ct+1, 'num_global', len(global_skyline_points), \
-                    'num_candidate', len(self.topo_graph), len(all_candidates), 'time', '%.2f' % float(time()-start_time))
-                start_time = time()
+                ct_time = time()-start_time
+                total_time += ct_time
+                print('step', ct+1, 'num_global', len(global_skyline_points), 'node', \
+                    len(self.topo_graph), 'candidates', len(all_candidates), 'slaves', num_slaves, 'time', '%.2f' % float(ct_time))
+                # print(all_candidates)
+                start_time = time()        
+        print('total time: %.2f' % float(total_time))
+        print()
     
     def get_current_items(self):
         # count current items
@@ -139,6 +147,23 @@ class KISkyline:
             current_items += len(self.bucket[bitmap].slaves)
             current_items += len(self.bucket[bitmap].master2slaves)
         return current_items
+    
+    def update_graph(self, all_candidates):
+        # list2dir
+        candidates_dict = {}
+        for candidate in all_candidates:
+            candidates_dict[candidate] = 1
+        
+        # clear
+        deleted_nodes = {}
+        for node in self.topo_graph:
+            if node not in candidates_dict:
+                deleted_nodes[node] = 1
+        for node in self.reverse_topo_graph:
+            if node not in candidates_dict:
+                deleted_nodes[node] = 1
+        for node in deleted_nodes:
+            self.delete_graph_dependencies(node)
     
     def delete_graph_dependencies(self, point):
         if point in self.topo_graph:
