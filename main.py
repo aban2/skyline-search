@@ -8,6 +8,7 @@ def _init(parser):
     parser.add_argument('-missing_rate', type=float, action='store')
     parser.add_argument('-num_samples', type=int, action='store')
     parser.add_argument('-num_attrs', type=int, action='store')
+    parser.add_argument('-print_step', type=int, action='store')
 
 if __name__ == '__main__':
     # parse args

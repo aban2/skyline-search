@@ -8,5 +8,5 @@
 # pfr = pandas_profiling.ProfileReport(data)
 # pfr.to_file('nan.json')
 
-a = [2, 3]
-print(a.find(1))
+a= {1:[2,3], 2:[3,4]}
+print(len(a))

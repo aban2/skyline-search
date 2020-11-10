@@ -12,7 +12,14 @@ def dominate(a, b):
             adb = 0
     if bda == 1:
         return -1
-    elif abd == 1:
+    elif adb == 1:
         return 1
     else:
         return 0
+
+def get_bitmap(point):
+    isnan = torch.isnan(point)
+    bit_map = ''
+    for idx, ele in enumerate(isnan):
+        bit_map += '0' if ele else '1'
+    return bit_map
